@@ -61,11 +61,18 @@
     <script src="js/loader.js"></script>
     
     <script>
+        const params = new Proxy(new URLSearchParams(window.location.search), {
+            get: (searchParams, prop) => searchParams.get(prop),
+        })
+
+        const form = document.querySelector('form')
+        const result = document.querySelector('#chart_div')
+
         const tezDecimals = 6
+
         let cachedData = null
         let tezUsdPrice = 0
         let ethUsdPrice = 0
-
         let projectId = 2
         let skipListings = 0
 
@@ -222,16 +229,12 @@
         }
 
         const init = () => {
-            const params = new Proxy(new URLSearchParams(window.location.search), {
-                get: (searchParams, prop) => searchParams.get(prop),
-            })
-
-            const form = document.querySelector('form')
-            const result = document.querySelector('#chart_div')
-
             if(params?.projectid !== null && params?.projectid !== '') {
+                result.innerHTML = 'loading data..'
                 projectId = params.projectid
+                skipListings = params.skiplistings || 0
                 form.querySelector('#projectId').value = projectId
+                form.querySelector('#skipListings').value = skipListings
                 getData(projectId)
             }
 
@@ -245,6 +248,11 @@
 
                 if(projectId !== formProjectId || !cachedData) {
                     projectId = formProjectId
+
+                    if(params?.projectid !== formProjectId || params?.skiplistings !== skipListings) {
+                        window.history.pushState('', '', `?projectid=${formProjectId}&skiplistings=${skipListings}`)
+                    }
+
                     getData(projectId)
                 } else {
                     parseData(cachedData)
