@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en" class="">
+<head>
+    <meta charset="UTF-8">
+    <title>fx(hash) charts</title>
+    
+    <link href="css/bootstrap.min.css" rel="stylesheet">
+    
+    <style type="text/css">
+        #chart_div {
+            height: auto;
+            min-height: 400px;
+        }
+
+        .popover-body img { width: auto; max-width: 100%; }
+    </style>
+</head>
+
+<body>
+    <div class="container mt-3 mb-3">
+        <h3>fx(hash) charts</h3>
+        
+        <p>
+            <i>
+                Put in a project ID and optionally a number of listings to skip (which may skew the chart due to their high prices)
+                Source is <a href="https://github.com/crypt0biwan/fxhash-charts">here</a>. Donations can go to obi.tez :-)
+            </i>
+        </p>
+    </div>
+    
+    <form>
+        <div class="container mb-3">
+            <div class="mb-3 row">
+                <label for="projectId" class="col-sm-2 col-form-label">Project Id</label>
+                <div class="col-sm-5">
+                    <input type="number" class="form-control" id="projectId" value="2" min="0" required pattern="0-9">
+                </div>
+            </div>
+            <div class="mb-3 row">
+                <label for="skipListings" class="col-sm-2 col-form-label">Skip last x listings</label>
+                <div class="col-sm-5 mb-2">
+                    <input type="number" class="form-control" id="skipListings" value="0" min="0">
+                </div>
+            </div>
+            <div class="mb-3 row">
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary btn-submit mb-3">Generate chart</button>
+                </div>
+            </div>
+        </div>
+    </form>
+    
+    <div class="container mb-5">
+        <div id="chart_div"></div>
+
+        <table id="table_div" class="table table-striped table-hover"></table>
+    </div>
+
+    <script src="js/bootstrap.bundle.min.js"></script>
+    <script src="js/lodash.min.js"></script>
+    <script src="js/loader.js"></script>
+    
+    <script>
+        const tezDecimals = 6
+        let cachedData = null
+        let tezUsdPrice = 0
+        let ethUsdPrice = 0
+
+        let projectId = 2
+        let skipListings = 0
+
+        // Load the Visualization API and the corechart package.
+        google.charts.load("current", {packages: ["corechart", "bar"]});
+
+        const formatValue = (value, decimals = 0, style = 'decimal') =>
+            new Intl.NumberFormat('en-US', {
+                style,
+                currency: 'USD',
+                minimumFractionDigits: decimals,
+                maximumFractionDigits: decimals,
+            }).format(value)
+
+        const getUsdPrices = () => {
+            var requestOptions = {
+                method: "GET",
+                redirect: "follow"
+            };
+
+            fetch("https://api.coingecko.com/api/v3/simple/price?ids=tezos%2Cethereum&vs_currencies=usd", requestOptions)
+                .then(response => response.json())
+                .then(result => {
+                    const { ethereum, tezos } = result
+
+                    ethUsdPrice = ethereum.usd
+                    tezUsdPrice = tezos.usd
+
+                    init()
+                })
+                .catch(error => console.log('error', error));            
+        }
+
+        const getData = projectId => {
+            let myHeaders = new Headers();
+            myHeaders.append("authority", "api.fxhash.xyz");
+            myHeaders.append("accept", "*/*");
+            myHeaders.append("accept-language", "en-GB,en-US;q=0.9,en;q=0.8");
+            myHeaders.append("cache-control", "no-cache");
+            myHeaders.append("content-type", "application/json");
+            myHeaders.append("pragma", "no-cache");
+            myHeaders.append("sec-fetch-dest", "empty");
+            myHeaders.append("sec-fetch-mode", "cors");
+            myHeaders.append("sec-fetch-site", "cross-site");
+            
+            var raw = JSON.stringify({
+                "operationName": "FXCollectorsQuery",
+                "query": `\nquery FXCollectorsQuery {\n\tgenerativeToken(id: ${projectId}){\n\t\tname\n\t\tid\n\t\tsupply\n\t\tobjktsCount\n\t\tauthor {\n\t\t\tname\n\t\t\tid\n\t\t}\n\t\tmarketStats {\n\t\t\tfloor\n\t\t\tmedian\n\t\t\thighestSold\n\t\t\tlowestSold\n\t\t\tprimVolumeTz\n\t\t\tprimVolumeNb\n\t\t\tsecVolumeTz\n\t\t\tsecVolumeNb\n\t\t}\n\t\tentireCollection {\n\t\t\towner {\n\t\t\t\tname\n\t\t\t\tid\n\t\t\t}\n\t\t\tactiveListing {\n\t\t\t\tissuer {\n\t\t\t\t\tname\n\t\t\t\t\tid\n\t\t\t\t}\n\t\t\t\tid\n\t\t\t\tversion\n\t\t\t\tprice\n\t\t\t}\n\t\t\tmetadata\n\t\t\tname\n\t\t\tid\n\t\t\tgenerationHash\n\t\t}\n\t}\n}\n`,
+                "variables": null
+            });
+            
+            var requestOptions = {
+                method: "POST",
+                headers: myHeaders,
+                body: raw,
+                redirect: "follow"
+            };
+            
+            fetch("https://api.fxhash.xyz/graphql", requestOptions) 
+                .then(response => response.json())
+                .then(result => parseData(result.data.generativeToken))
+                .catch(error => console.log('error', error));
+        }
+        
+        const parseData = (data) => {
+            let priceArr = []
+            let tableHTML = ''
+
+            cachedData = data
+            
+            const { name: nameProject, supply, objktsCount, author, marketStats, entireCollection } = data
+            const { name: nameAuthor, id } = author
+
+            const activeListings = _.filter(entireCollection, l => l.activeListing !== null)
+            const sortedActiveListings = _.orderBy(activeListings, ['activeListing.price'], ['asc'])
+            const highestPrice = sortedActiveListings[sortedActiveListings.length-1].activeListing.price / 10 ** tezDecimals
+            const highestFormattedPrice = formatValue(highestPrice)
+            const highestUsdPrice = highestPrice * tezUsdPrice
+            const highestFormattedUsdPrice = formatValue(highestUsdPrice)
+            const highestEthPrice = highestPrice / ethUsdPrice
+            const highestFormattedEthPrice = formatValue(highestEthPrice, 2)
+            const numberOfListings = sortedActiveListings.length
+            const lastListingName = _.maxBy(activeListings, 'id').name
+
+            if(sortedActiveListings.length > 0) { 
+                tableHTML += `
+                    <thead>
+                        <tr>
+                            <th>Artwork</th>
+                            <th style="text-align: right; padding-right: 20px;">Tez price</th>
+                            <th style="text-align: right; padding-right: 20px;">USD price</th>
+                            <th style="text-align: right; padding-right: 20px;">ETH price</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                `
+
+                sortedActiveListings.map(listing => {
+                    const { id, name, activeListing, metadata } = listing
+                    const { thumbnailUri } = metadata
+                    const { price } = activeListing
+                    const realPrice = price / 10 ** tezDecimals
+                    const usdPrice = realPrice * tezUsdPrice
+                    const ethPrice = usdPrice / ethUsdPrice
+
+                    priceArr.push(realPrice)
+                    
+                    tableHTML += `<tr>
+                        <td>
+                            <span data-bs-toggle="popover" data-bs-title="${name}" data-bs-content="https://gateway.fxhash.xyz/ipfs/${thumbnailUri.replace(/ipfs\:\/\//, '')}">🏞</span>
+                            <a href="https://www.fxhash.xyz/gentk/${id}" target="_blank">${name}
+                        </td>
+                        <td style="text-align: right; padding-right: 20px;">${formatValue(realPrice)} tez</td>
+                        <td style="text-align: right; padding-right: 20px;">${formatValue(usdPrice)} USD</td>
+                        <td style="text-align: right; padding-right: 20px;">${formatValue(ethPrice, 2)} ETH</td>
+                    </tr>`
+                })
+
+                tableHTML += `</tbody>`
+
+                renderChart(nameProject, nameAuthor, priceArr)
+            }
+
+            table_div.innerHTML = tableHTML
+
+            document.querySelectorAll('[data-bs-toggle="popover"]')
+                .forEach(popover => {
+                    let html = `<img src="${popover.getAttribute('data-bs-content')}" />`
+
+                    new bootstrap.Popover(popover, {
+                        animation: false,
+                        content: html,
+                        html: true,
+                        placement: 'bottom',
+                        trigger: 'hover'
+                    })
+                })
+        }
+        
+        const renderChart = (nameProject, nameAuthor, data) => {
+            const slicedData = data.slice(0, data.length-skipListings)
+            const listings = [['Index', 'Tez price']].concat(slicedData.map((listing, i) => [i+1, listing]))
+            const chartData = google.visualization.arrayToDataTable(listings);
+            
+            const options = {
+                title: `${slicedData.length}/${data.length} "${nameProject}" by @${nameAuthor} listings`
+            };
+                
+            const chart = new google.visualization.ColumnChart(
+                document.getElementById('chart_div')
+            );
+                
+            chart.draw(chartData, options);
+        }
+
+        const init = () => {
+            const params = new Proxy(new URLSearchParams(window.location.search), {
+                get: (searchParams, prop) => searchParams.get(prop),
+            })
+
+            const form = document.querySelector('form')
+            const result = document.querySelector('#chart_div')
+
+            if(params?.projectid !== null && params?.projectid !== '') {
+                projectId = params.projectid
+                form.querySelector('#projectId').value = projectId
+                getData(projectId)
+            }
+
+            form.querySelector('.btn-submit').addEventListener('click', event => {
+                result.innerHTML = 'loading data..'
+
+                const formProjectId = _.parseInt(form.querySelector('#projectId').value)
+                skipListings = _.parseInt(form.querySelector('#skipListings').value)
+
+                event.preventDefault()
+
+                if(projectId !== formProjectId || !cachedData) {
+                    projectId = formProjectId
+                    getData(projectId)
+                } else {
+                    parseData(cachedData)
+                }
+            })
+        }
+
+        getUsdPrices()
+    </script>
+    </body>
+</html>
