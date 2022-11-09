@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html lang="en" class="">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta charset="UTF-8">
+
     <title>fx(hash) charts</title>
     
     <link href="css/bootstrap.min.css" rel="stylesheet">
@@ -29,7 +31,7 @@
     </div>
     
     <form>
-        <div class="container mb-3">
+        <div class="container">
             <div class="mb-3 row">
                 <label for="projectId" class="col-sm-2 col-form-label">Project Id</label>
                 <div class="col-sm-5">
@@ -42,17 +44,17 @@
                     <input type="number" class="form-control" id="skipListings" value="0" min="0">
                 </div>
             </div>
-            <div class="mb-3 row">
+            <div class="row">
                 <div class="col-12">
                     <button type="submit" class="btn btn-primary btn-submit mb-3">Generate chart</button>
                 </div>
             </div>
         </div>
     </form>
-    
-    <div class="container mb-5">
-        <div id="chart_div"></div>
 
+    <div id="chart_div"></div>
+
+    <div class="container mb-5">
         <table id="table_div" class="table table-striped table-hover"></table>
     </div>
 
@@ -120,7 +122,50 @@
             
             var raw = JSON.stringify({
                 "operationName": "FXCollectorsQuery",
-                "query": `\nquery FXCollectorsQuery {\n\tgenerativeToken(id: ${projectId}){\n\t\tname\n\t\tid\n\t\tsupply\n\t\tobjktsCount\n\t\tauthor {\n\t\t\tname\n\t\t\tid\n\t\t}\n\t\tmarketStats {\n\t\t\tfloor\n\t\t\tmedian\n\t\t\thighestSold\n\t\t\tlowestSold\n\t\t\tprimVolumeTz\n\t\t\tprimVolumeNb\n\t\t\tsecVolumeTz\n\t\t\tsecVolumeNb\n\t\t}\n\t\tentireCollection {\n\t\t\towner {\n\t\t\t\tname\n\t\t\t\tid\n\t\t\t}\n\t\t\tactiveListing {\n\t\t\t\tissuer {\n\t\t\t\t\tname\n\t\t\t\t\tid\n\t\t\t\t}\n\t\t\t\tid\n\t\t\t\tversion\n\t\t\t\tprice\n\t\t\t}\n\t\t\tmetadata\n\t\t\tname\n\t\t\tid\n\t\t\tgenerationHash\n\t\t}\n\t}\n}\n`,
+                "query": `query FXCollectorsQuery {
+                    generativeToken(id: ${projectId}) {
+                        name
+                        id
+                        supply
+                        objktsCount
+                        author {
+                            name
+                            id
+                            collaborators {
+                                name
+                            }
+                        }
+                        marketStats {
+                            floor
+                            median
+                            highestSold
+                            lowestSold
+                            primVolumeTz
+                            primVolumeNb
+                            secVolumeTz
+                            secVolumeNb
+                        }
+                        entireCollection {
+                            owner {
+                                name
+                                id
+                            }
+                            activeListing {
+                                issuer {
+                                    name
+                                    id
+                                }
+                                id
+                                version
+                                price
+                            }
+                            metadata
+                            name
+                            id
+                            generationHash
+                        }
+                    }
+                }`,
                 "variables": null
             });
             
@@ -144,7 +189,11 @@
             cachedData = data
             
             const { name: nameProject, supply, objktsCount, author, marketStats, entireCollection } = data
-            const { name: nameAuthor, id } = author
+            let { name: nameAuthor, id, collaborators } = author
+
+            if(collaborators !== null) {
+                nameAuthor = collaborators.map(collab => collab.name).join(' and ')
+            }
 
             const activeListings = _.filter(entireCollection, l => l.activeListing !== null)
             const sortedActiveListings = _.orderBy(activeListings, ['activeListing.price'], ['asc'])
@@ -193,7 +242,7 @@
 
                 tableHTML += `</tbody>`
 
-                renderChart(nameProject, nameAuthor, priceArr)
+                renderChart(nameProject, nameAuthor, priceArr, supply)
             }
 
             table_div.innerHTML = tableHTML
@@ -212,13 +261,14 @@
                 })
         }
         
-        const renderChart = (nameProject, nameAuthor, data) => {
+        const renderChart = (nameProject, nameAuthor, data, supply) => {
             const slicedData = data.slice(0, data.length-skipListings)
             const listings = [['Index', 'Tez price']].concat(slicedData.map((listing, i) => [i+1, listing]))
             const chartData = google.visualization.arrayToDataTable(listings);
             
             const options = {
-                title: `${slicedData.length}/${data.length} "${nameProject}" by @${nameAuthor} listings`
+                width: window.innerWidth,
+                title: `${slicedData.length}/${data.length} listings (${parseFloat(data.length / supply * 100).toFixed(0)}% listed) for "${nameProject}" by ${nameAuthor}`
             };
                 
             const chart = new google.visualization.ColumnChart(
@@ -236,6 +286,12 @@
                 form.querySelector('#projectId').value = projectId
                 form.querySelector('#skipListings').value = skipListings
                 getData(projectId)
+            }
+
+            window.onresize = function(){
+                if(cachedData) {
+                    parseData(cachedData)
+                }
             }
 
             form.querySelector('.btn-submit').addEventListener('click', event => {
