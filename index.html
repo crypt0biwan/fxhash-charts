@@ -14,6 +14,12 @@
             min-height: 400px;
         }
 
+        #mktcap_div {
+            border-width: 1px;
+            border-style: solid;
+            border-color: var(--bs-border-color);
+        }
+
         .popover-body img { width: auto; max-width: 100%; }
     </style>
 </head>
@@ -53,6 +59,8 @@
     </form>
 
     <div id="chart_div"></div>
+
+    <div id="mktcap_div" class="container py-3 mb-5"></div>
 
     <div class="container mb-5">
         <table id="table_div" class="table table-striped table-hover"></table>
@@ -197,6 +205,7 @@
 
             const activeListings = _.filter(entireCollection, l => l.activeListing !== null)
             const sortedActiveListings = _.orderBy(activeListings, ['activeListing.price'], ['asc'])
+            const lowestPrice = sortedActiveListings[0].activeListing.price / 10 ** tezDecimals
             const highestPrice = sortedActiveListings[sortedActiveListings.length-1].activeListing.price / 10 ** tezDecimals
             const highestFormattedPrice = formatValue(highestPrice)
             const highestUsdPrice = highestPrice * tezUsdPrice
@@ -205,6 +214,27 @@
             const highestFormattedEthPrice = formatValue(highestEthPrice, 2)
             const numberOfListings = sortedActiveListings.length
             const lastListingName = _.maxBy(activeListings, 'id').name
+
+            // console.log(`Floor price: ${lowestPrice}, supply: ${supply}, mktcap: ${formatValue(lowestPrice*supply)}`)
+
+            mktcap_div.innerHTML = `
+                <div class="row">
+                    <div class="col col-md-2">
+                        <strong>Market cap TEZ</strong>
+                    </div>
+                    <div class="col">
+                        ${formatValue(lowestPrice * supply)}
+                    </div>
+                </div>
+                <div class="row">
+                    <div class="col col-md-2">
+                        <strong>Market cap USD</strong>
+                    </div>
+                    <div class="col">
+                        ${formatValue(lowestPrice * supply * tezUsdPrice)}
+                    </div>
+                </div>
+            `
 
             if(sortedActiveListings.length > 0) { 
                 tableHTML += `
@@ -305,13 +335,13 @@
                 if(projectId !== formProjectId || !cachedData) {
                     projectId = formProjectId
 
-                    if(params?.projectid !== formProjectId || params?.skiplistings !== skipListings) {
-                        window.history.pushState('', '', `?projectid=${formProjectId}&skiplistings=${skipListings}`)
-                    }
-
                     getData(projectId)
                 } else {
                     parseData(cachedData)
+                }
+
+                if(params?.projectid !== formProjectId || params?.skiplistings !== skipListings) {
+                    window.history.pushState('', '', `?projectid=${formProjectId}&skiplistings=${skipListings}`)
                 }
             })
         }
