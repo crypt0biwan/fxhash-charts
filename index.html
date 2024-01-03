@@ -131,7 +131,7 @@
             var raw = JSON.stringify({
                 "operationName": "FXCollectorsQuery",
                 "query": `query FXCollectorsQuery {
-                    generativeToken(id: ${projectId}) {
+                    generativeToken(id: "${projectId}") {
                         name
                         id
                         supply
@@ -184,7 +184,7 @@
                 redirect: "follow"
             };
             
-            fetch("https://api.fxhash.xyz/graphql", requestOptions) 
+            fetch("https://api.v2-temp.fxhash.xyz/graphql", requestOptions) 
                 .then(response => response.json())
                 .then(result => parseData(result.data.generativeToken))
                 .catch(error => console.log('error', error));
